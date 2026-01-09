@@ -140,6 +140,13 @@ async def end_div_pick(c: CallbackQuery):
     st["boost_price"] = price
     details = f"{mode.value} | {bt.value} | {start_pos.rank} Div {start_pos.div} → {end_pos.rank} " + ("" if end_pos.div is None else f"Div {end_pos.div}")
     payload = details.replace("|", "~")  # keep callback small
+    # store pending order (keep callback_data short)
+    st["pending_order"] = {
+        "service_key": "boost",
+        "service": "Буст ранга",
+        "details": details,
+        "price": price,
+    }
 
     text = (
         f"✅ *Расчёт буста*\n"
@@ -150,7 +157,7 @@ async def end_div_pick(c: CallbackQuery):
         f"Нажмите «Оформить заявку», и оператор свяжется с вами."
     )
     from .keyboards import order_confirm_kb
-    await c.message.edit_text(text, reply_markup=order_confirm_kb("boost", payload), parse_mode="Markdown")
+    await c.message.edit_text(text, reply_markup=order_confirm_kb("boost"), parse_mode="Markdown")
     await c.answer()
 
 # --- Coaching ---
@@ -173,11 +180,17 @@ async def coach_pack(c: CallbackQuery):
     service = "Коучинг SSL" if who=="ssl" else "Коучинг VZM"
     details = f"{service} | {pack}"
     payload = details.replace("|","~")
+    s(c.from_user.id)["pending_order"] = {
+        "service_key": "coaching",
+        "service": "Коучинг",
+        "details": details,
+        "price": price_i,
+    }
     from .keyboards import order_confirm_kb
     await c.message.edit_text(
         f"✅ *{service}*\nПакет: *{pack}*\nЦена: *{price_i} ₽*\n\n"
         "Нажмите «Оформить заявку», и оператор свяжется с вами.",
-        reply_markup=order_confirm_kb("coaching", payload),
+        reply_markup=order_confirm_kb("coaching"),
         parse_mode="Markdown"
     )
     await c.answer()
@@ -194,11 +207,17 @@ async def replay_pack(c: CallbackQuery):
     n_i, price_i = int(n), int(price)
     details = f"Разбор реплея SSL | {n_i} реплей(ев) | до 48 часов"
     payload = details.replace("|","~")
+    s(c.from_user.id)["pending_order"] = {
+        "service_key": "replay",
+        "service": "Разбор реплея",
+        "details": details,
+        "price": price_i,
+    }
     from .keyboards import order_confirm_kb
     await c.message.edit_text(
         f"✅ *Разбор реплея (SSL)*\nПакет: *{n_i}*\nЦена: *{price_i} ₽*\nСрок: *до 48 часов*\n\n"
         "Нажмите «Оформить заявку», и оператор свяжется с вами (и попросит файл/ник).",
-        reply_markup=order_confirm_kb("replay", payload),
+        reply_markup=order_confirm_kb("replay"),
         parse_mode="Markdown"
     )
     await c.answer()
@@ -223,11 +242,17 @@ async def play_pack(c: CallbackQuery):
     fmt_name = "1x1" if fmt=="1v1" else "2x2 (пати)"
     details = f"Игра с VZM | {fmt_name} | {n_i} игр"
     payload = details.replace("|","~")
+    s(c.from_user.id)["pending_order"] = {
+        "service_key": "play",
+        "service": "Игра с VZM",
+        "details": details,
+        "price": price_i,
+    }
     from .keyboards import order_confirm_kb
     await c.message.edit_text(
         f"✅ *Игра с VZM*\nФормат: *{fmt_name}*\nПакет: *{n_i} игр*\nЦена: *{price_i} ₽*\n\n"
         "Нажмите «Оформить заявку», и оператор свяжется с вами для времени/деталей.",
-        reply_markup=order_confirm_kb("play", payload),
+        reply_markup=order_confirm_kb("play"),
         parse_mode="Markdown"
     )
     await c.answer()
@@ -242,30 +267,23 @@ SERVICE_LABEL = {
 
 @router.callback_query(F.data.startswith("order:"))
 async def create_order(c: CallbackQuery, config: Config):
-    _, service_key, payload = c.data.split(":",2)
-    details = payload.replace("~","|")
-    price = 0
+    # callback_data is short: order:<service_key>
+    service_key = c.data.split(":", 1)[1]
 
-    # parse price from message (reliable enough for MVP)
-    # We'll store price as last seen in session for boost; for others it's inside message text
     st = s(c.from_user.id)
-    if service_key == "boost":
-        price = int(st.get("boost_price", 0))
-    else:
-        # attempt to parse from message text "Цена: *123 ₽*"
-        txt = c.message.text or ""
-        import re
-        m = re.search(r"Цена:\s*\*?(\d+)\s*₽", txt)
-        if m:
-            price = int(m.group(1))
-        else:
-            # fallback: 0
-            price = 0
+    po = st.get("pending_order")
+    if not po or po.get("service_key") != service_key:
+        await c.answer("Заявка устарела. Оформите заново.", show_alert=True)
+        return
+
+    details = po["details"]
+    price = int(po["price"])
+    service_name = po["service"]
 
     order_id = await db.create_order(
         user_id=c.from_user.id,
         username=c.from_user.username,
-        service=SERVICE_LABEL.get(service_key, service_key),
+        service=service_name,
         details=details,
         price_rub=price,
         status="NEW",
@@ -274,11 +292,16 @@ async def create_order(c: CallbackQuery, config: Config):
     # Send to admin chat
     user_link = f"@{c.from_user.username}" if c.from_user.username else f"id:{c.from_user.id}"
     text = (
-        f"📦 *Новая заявка* \n"
-        f"*ORDER #{order_id}*\n"
-        f"Услуга: *{SERVICE_LABEL.get(service_key, service_key)}*\n"
-        f"Детали: `{details}`\n"
-        f"Цена: *{price} ₽*\n"
+        f"📦 *Новая заявка* 
+"
+        f"*ORDER #{order_id}*
+"
+        f"Услуга: *{service_name}*
+"
+        f"Детали: `{details}`
+"
+        f"Цена: *{price} ₽*
+"
         f"Клиент: {user_link}"
     )
     try:
@@ -289,16 +312,20 @@ async def create_order(c: CallbackQuery, config: Config):
             reply_markup=admin_status_kb(order_id),
         )
     except TelegramBadRequest:
-        # if markdown fails due to special chars
         await c.bot.send_message(
             chat_id=config.admin_chat_id,
             text=text.replace("`",""),
             reply_markup=admin_status_kb(order_id),
         )
 
+    st.pop("pending_order", None)
+
     await c.message.edit_text(
-        "✅ *Заявка отправлена!*\n\n"
-        "Оператор скоро свяжется с вами в личных сообщениях.\n"
+        "✅ *Заявка отправлена!*
+
+"
+        "Оператор скоро свяжется с вами в личных сообщениях.
+"
         "Спасибо!",
         parse_mode="Markdown",
         reply_markup=main_menu(config.support_username),
@@ -306,6 +333,7 @@ async def create_order(c: CallbackQuery, config: Config):
     await c.answer()
 
 # --- Admin callbacks ---
+
 @router.callback_query(F.data.startswith("adm:st:"))
 async def admin_set_status(c: CallbackQuery, config: Config):
     # Only allow actions in admin chat

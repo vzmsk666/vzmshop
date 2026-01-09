@@ -70,11 +70,6 @@ def order_confirm_kb(service_key: str) -> InlineKeyboardMarkup:
     kb.button(text="⬅️ Назад", callback_data=f"svc:{service_key}")
     kb.adjust(1,1)
     return kb.as_markup()
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✅ Оформить заявку", callback_data=f"order:{service_key}:{payload}")
-    kb.button(text="⬅️ Назад", callback_data=f"svc:{service_key}")
-    kb.adjust(1,1)
-    return kb.as_markup()
 
 def coaching_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
