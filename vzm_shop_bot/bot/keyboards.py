@@ -64,7 +64,12 @@ def div_kb(prefix: str, rank: str) -> InlineKeyboardMarkup:
     kb.adjust(2,2,1)
     return kb.as_markup()
 
-def order_confirm_kb(service_key: str, payload: str) -> InlineKeyboardMarkup:
+def order_confirm_kb(service_key: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Оформить заявку", callback_data=f"order:{service_key}")
+    kb.button(text="⬅️ Назад", callback_data=f"svc:{service_key}")
+    kb.adjust(1,1)
+    return kb.as_markup()
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Оформить заявку", callback_data=f"order:{service_key}:{payload}")
     kb.button(text="⬅️ Назад", callback_data=f"svc:{service_key}")
