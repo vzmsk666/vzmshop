@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
+
 class Mode(str, Enum):
     DOUBLES_2V2 = "2v2"
 
@@ -10,6 +11,7 @@ class BoostType(str, Enum):
     PARTY = "party"
 
 
+# Порядок рангов (Rocket League)
 RANKS = [
     "Bronze I",
     "Bronze II",
@@ -35,6 +37,9 @@ RANKS = [
     "Supersonic Legend",
 ]
 
+# ВАЖНО: совместимость со старым кодом (keyboards.py импортит RANKS_ORDER)
+RANKS_ORDER = RANKS
+
 
 # Новые цены за 1 дивизион (логика как раньше)
 PRICE_PER_DIVISION = {
@@ -45,7 +50,7 @@ PRICE_PER_DIVISION = {
     "Diamond": 185,
     "Champion": 360,
     "Grand Champion": 800,
-    # Особое правило: начиная с GC3 (все дивы GC3) и переход в SSL — 1500
+    # Спец правило: начиная с GC3 (все дивы GC3) и переход в SSL — 1500
     "GC3_SPECIAL": 1500,
 }
 
@@ -70,75 +75,79 @@ def group_for_rank(rank: str) -> str:
     return "Unknown"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Position:
     rank: str
     div: int | None  # None для SSL
 
 
-def pos_index(pos: Position) -> int:
+def _pos_index(pos: Position) -> int:
     """
     Индекс позиции по шкале "шагов".
     Один шаг = +1 дивизион.
-    SSL = отдельная конечная точка.
+    SSL = конечная точка (div=None).
     """
     rank_i = RANKS.index(pos.rank)
 
     if pos.rank == "Supersonic Legend":
-        return rank_i * 4  # div игнорируем
+        return rank_i * 4
 
-    # div 1..4 → шаги 0..3
+    # div 1..4 -> offset 0..3
+    if pos.div is None:
+        raise ValueError("Для не-SSL ранга div должен быть 1..4")
+    if not (1 <= pos.div <= 4):
+        raise ValueError("div должен быть в диапазоне 1..4")
+
     return rank_i * 4 + (pos.div - 1)
 
 
-def step_price_for_rank(rank: str) -> int:
+def _step_price_for_rank(rank: str) -> int:
     """
-    Цена одного шага (одного дивизиона) по 'текущему рангу' (логика Вариант A).
+    Цена одного шага (одного дивизиона) по "текущему рангу" (логика Вариант A).
     Спец правило: все шаги в GC3 стоят GC3_SPECIAL.
     """
     if rank == "Grand Champion III":
         return PRICE_PER_DIVISION["GC3_SPECIAL"]
 
     group = group_for_rank(rank)
+
     if group == "SSL":
-        # Шаги внутри SSL не считаются, SSL - конечная цель
+        # шагов внутри SSL не считаем; но если вдруг понадобится, используем спец-цену
         return PRICE_PER_DIVISION["GC3_SPECIAL"]
+
+    if group not in PRICE_PER_DIVISION:
+        raise ValueError(f"Неизвестная группа ранга: {rank} -> {group}")
 
     return PRICE_PER_DIVISION[group]
 
 
 def calc_boost_price(start: Position, end: Position, mode: Mode, boost_type: BoostType) -> int:
     """
-    Считает цену буста по шагам.
+    Считает цену буста по шагам:
     - 1 шаг = 1 дивизион
-    - Div4 -> следующий ранг Div1 = цена текущего ранга (закрываем текущий)
-    - GC3 дивы и GC3->SSL считаются по 1500
+    - Div4 -> следующий ранг Div1: цена текущего ранга (закрываем текущий)
+    - Все шаги в GC3 и GC3->SSL считаются по 1500
     - PARTY = х2
     """
-
-    s_i = pos_index(start)
-    e_i = pos_index(end)
+    s_i = _pos_index(start)
+    e_i = _pos_index(end)
 
     if e_i <= s_i:
         raise ValueError("Целевой ранг должен быть выше стартового.")
 
     total = 0
-
-    current = start
     cur_i = s_i
+    current = start
 
     while cur_i < e_i:
-        # шаг считается по цене текущего ранга (который закрываем)
-        price_step = step_price_for_rank(current.rank)
-        total += price_step
+        total += _step_price_for_rank(current.rank)
 
-        # двигаемся на 1 шаг вперёд
+        # шаг вперёд
         cur_i += 1
 
-        # пересчитываем current позицию из индекса
+        # перевод индекса в Position
         next_rank_i = cur_i // 4
         next_div_offset = cur_i % 4  # 0..3
-
         next_rank = RANKS[next_rank_i]
 
         if next_rank == "Supersonic Legend":
@@ -146,8 +155,8 @@ def calc_boost_price(start: Position, end: Position, mode: Mode, boost_type: Boo
         else:
             current = Position(next_rank, next_div_offset + 1)
 
-    # PARTY x2
     if boost_type == BoostType.PARTY:
         total *= 2
 
-    return total
+    return int(total)
+
