@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 
 class Mode(str, Enum):
@@ -78,33 +81,30 @@ def group_for_rank(rank: str) -> str:
 @dataclass(frozen=True)
 class Position:
     rank: str
-    div: int | None  # None для SSL
+    div: Optional[int]  # None для SSL
 
 
 def _pos_index(pos: Position) -> int:
     """
-    Индекс позиции по шкале "шагов".
-    Один шаг = +1 дивизион.
-    SSL = конечная точка (div=None).
+    Индекс позиции по шкале шагов.
+    1 шаг = 1 дивизион.
+    SSL = отдельная конечная точка.
     """
     rank_i = RANKS.index(pos.rank)
 
     if pos.rank == "Supersonic Legend":
         return rank_i * 4
 
-    # div 1..4 -> offset 0..3
-    if pos.div is None:
-        raise ValueError("Для не-SSL ранга div должен быть 1..4")
-    if not (1 <= pos.div <= 4):
-        raise ValueError("div должен быть в диапазоне 1..4")
+    if pos.div is None or not (1 <= pos.div <= 4):
+        raise ValueError("div должен быть 1..4 для не-SSL рангов")
 
     return rank_i * 4 + (pos.div - 1)
 
 
 def _step_price_for_rank(rank: str) -> int:
     """
-    Цена одного шага (одного дивизиона) по "текущему рангу" (логика Вариант A).
-    Спец правило: все шаги в GC3 стоят GC3_SPECIAL.
+    Цена одного шага (дивизиона) по текущему рангу (логика Вариант A — закрываем текущий).
+    Спец правило: все дивы GC3 стоят GC3_SPECIAL.
     """
     if rank == "Grand Champion III":
         return PRICE_PER_DIVISION["GC3_SPECIAL"]
@@ -112,7 +112,6 @@ def _step_price_for_rank(rank: str) -> int:
     group = group_for_rank(rank)
 
     if group == "SSL":
-        # шагов внутри SSL не считаем; но если вдруг понадобится, используем спец-цену
         return PRICE_PER_DIVISION["GC3_SPECIAL"]
 
     if group not in PRICE_PER_DIVISION:
@@ -126,8 +125,8 @@ def calc_boost_price(start: Position, end: Position, mode: Mode, boost_type: Boo
     Считает цену буста по шагам:
     - 1 шаг = 1 дивизион
     - Div4 -> следующий ранг Div1: цена текущего ранга (закрываем текущий)
-    - Все шаги в GC3 и GC3->SSL считаются по 1500
-    - PARTY = х2
+    - Все дивы GC3 и переход GC3->SSL = 1500
+    - PARTY = x2
     """
     s_i = _pos_index(start)
     e_i = _pos_index(end)
@@ -142,10 +141,8 @@ def calc_boost_price(start: Position, end: Position, mode: Mode, boost_type: Boo
     while cur_i < e_i:
         total += _step_price_for_rank(current.rank)
 
-        # шаг вперёд
         cur_i += 1
 
-        # перевод индекса в Position
         next_rank_i = cur_i // 4
         next_div_offset = cur_i % 4  # 0..3
         next_rank = RANKS[next_rank_i]
@@ -159,4 +156,3 @@ def calc_boost_price(start: Position, end: Position, mode: Mode, boost_type: Boo
         total *= 2
 
     return int(total)
-
