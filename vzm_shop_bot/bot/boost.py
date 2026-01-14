@@ -24,15 +24,15 @@ RANKS_ORDER = [
 
 # Price per division step for 2v2 mode (active)
 PRICE_PER_DIV_2V2 = {
-    "Bronze": 110,
-    "Silver": 130,
-    "Gold": 140,
-    "Platinum": 180,
-    "Diamond": 220,
-    "Champion": 400,
-    "Grand Champion I": 900,
-    "Grand Champion II": 900,
-    "Grand Champion III": 2200,  # special
+    "Bronze": 40,
+    "Silver": 50,
+    "Gold": 60,
+    "Platinum": 70,
+    "Diamond": 90,
+    "Champion": 150,
+    "Grand Champion I": 300,
+    "Grand Champion II": 300,
+    "Grand Champion III": 1500,  # special
 }
 
 def rank_group(rank: str) -> str:
